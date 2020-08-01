@@ -13,7 +13,7 @@ enum ControlCodes {
   SMACKER_HEADER_ALT = 0x78
 };
 
-void write_wave_header(FILE* file, int freq, int channels, int bitdepth)
+void write_wave_header(FILE* file, uint32_t freq, uint16_t channels, uint16_t bitdepth)
 {
   fwrite("RIFF", 4, 1, file);
 
@@ -67,7 +67,8 @@ void dump_data(FILE* in, FILE* out, uint32_t len)
 }
 
 void combine_smk(FILE** smk_head, FILE** smk_foot, FILE** smk_file,
-                 const char* smk_header_filename, const char* smk_footer_filename)
+                 const char* smk_header_filename, const char* smk_footer_filename,
+                 int smacker_frame_count)
 {
   fseek(*smk_head, 0, SEEK_END);
   long header_sz = ftell(*smk_head);
@@ -90,6 +91,8 @@ void combine_smk(FILE** smk_head, FILE** smk_foot, FILE** smk_file,
 
   fclose(*smk_file);
   *smk_file = NULL;
+
+  printf("Exported SMK+WAV pair with %i frames\n", smacker_frame_count);
 }
 
 int extract_video(const char* filename, int verbose)
@@ -104,6 +107,7 @@ int extract_video(const char* filename, int verbose)
   // Variables
   uint16_t control_code;
   long file_pos;
+  int smk_frame_count = 0;
   uint32_t wav_data_sz = 0;
   uint16_t video_width, video_height;
   uint16_t audio_freq;
@@ -155,7 +159,7 @@ int extract_video(const char* filename, int verbose)
   printf("Audio: %i Hz, %i channel(s), %i-bit\n", audio_freq, audio_channels, audio_bit_depth);
 
   // Create WAV file
-  sprintf(wav_filename, "%s.WAV", filename);
+  sprintf(wav_filename, "%s-%i.WAV", filename, smk_index);
   if ((wav_file = fopen(wav_filename, "wb"))) {
     // Write WAV header
     write_wave_header(wav_file, audio_freq, audio_channels, audio_bit_depth);
@@ -206,26 +210,38 @@ int extract_video(const char* filename, int verbose)
         printf("Found Smacker header at %lx of size %x\n", file_pos, smacker_chunk_sz);
       }
 
-      if (control_code == SMACKER_HEADER) {
-        fseek(file, 0x1C, SEEK_CUR);
-      } else {
-
-      }
+      fseek(file, 0x1C, SEEK_CUR);
 
       if (smk_file) {
-        combine_smk(&smk_head, &smk_foot, &smk_file, smk_header_filename, smk_footer_filename);
+        combine_smk(&smk_head, &smk_foot, &smk_file,
+                    smk_header_filename, smk_footer_filename,
+                    smk_frame_count);
       }
+
+      smk_frame_count = 0;
 
       // Generate filenames
       sprintf(smk_header_filename, "%s-%i.SMKHEAD", filename, smk_index);
       sprintf(smk_footer_filename, "%s-%i.SMKFOOT", filename, smk_index);
       sprintf(smk_file_filename, "%s-%i.SMK", filename, smk_index);
-      smk_index++;
 
       // Open files
       smk_head = fopen(smk_header_filename, "wb+");
       smk_foot = fopen(smk_footer_filename, "wb+");
       smk_file = fopen(smk_file_filename, "wb");
+
+      // Open new WAV file
+      if (smk_index > 1 && wav_file) {
+        write_wave_footer(wav_file, wav_data_sz);
+        fclose(wav_file);
+
+        wav_data_sz = 0;
+        sprintf(wav_filename, "%s-%i.WAV", filename, smk_index);
+        wav_file = fopen(wav_filename, "wb");
+        write_wave_header(wav_file, audio_freq, audio_channels, audio_bit_depth);
+      }
+
+      smk_index++;
 
       if (!smk_head || !smk_foot || !smk_file) {
         printf("Failed to open output Smacker file\n");
@@ -251,6 +267,8 @@ int extract_video(const char* filename, int verbose)
       fwrite(&chunk_sz, sizeof(chunk_sz), 1, smk_head);
 
       dump_data(file, smk_foot, chunk_sz);
+
+      smk_frame_count++;
       break;
     }
     case 0x67:
@@ -284,7 +302,9 @@ end:
 
   // Combine SMKs
   if (smk_file && smk_head && smk_foot) {
-    combine_smk(&smk_head, &smk_foot, &smk_file, smk_header_filename, smk_footer_filename);
+    combine_smk(&smk_head, &smk_foot, &smk_file,
+                smk_header_filename, smk_footer_filename,
+                smk_frame_count);
   }
 
   // Close SMK
