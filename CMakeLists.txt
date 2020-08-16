@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.5)
 
-set(PLAYER_TARGET "IAVFExtract")
+set(PLAYER_TARGET "iavfextract")
 
 project(${PLAYER_TARGET} LANGUAGES C)
 
