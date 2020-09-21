@@ -178,25 +178,35 @@ int extract_video(const char* filename, int verbose)
     case WAVE_DATA:
     {
       uint32_t index;
-      uint32_t chunk_sz1;
-      uint32_t chunk_sz2;
+      uint32_t effective_sz;
+      uint32_t data_sz;
 
       fread(&index, sizeof(index), 1, file);
-      fread(&chunk_sz1, sizeof(chunk_sz1), 1, file);
-      fread(&chunk_sz2, sizeof(chunk_sz2), 1, file);
+      fread(&effective_sz, sizeof(effective_sz), 1, file);
+      fread(&data_sz, sizeof(data_sz), 1, file);
 
       if (verbose) {
-        printf("Found WAV data at %lx. Index %i, Sz1: %i, Sz2: %i\n", file_pos, index, chunk_sz1, chunk_sz2);
+        printf("Found WAV data at %lx. Index %i, Sz1: %i, Sz2: %i\n", file_pos, index, effective_sz, data_sz);
       }
 
-      if (chunk_sz2 > 0) {
-        if (wav_file) {
-          wav_data_sz += chunk_sz2;
+      // Write chunk_sz1 bytes in total
+      if (wav_file) {
+        if (effective_sz > 0) {
+          if (data_sz > 0) {
+            dump_data(file, wav_file, data_sz);
+          }
 
-          dump_data(file, wav_file, chunk_sz2);
-        } else {
-          fseek(file, chunk_sz2, SEEK_CUR);
+          // If data size was less than effective size, write bytes to make up the difference
+          for (uint32_t i=data_sz; i<effective_sz; i++) {
+            // Write difference
+            fputc(0, wav_file);
+          }
+
+          wav_data_sz += effective_sz;
         }
+      } else if (data_sz > 0) {
+        // No wave output, just skip over data
+        fseek(file, data_sz, SEEK_CUR);
       }
       break;
     }
